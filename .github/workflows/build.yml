@@ -25,9 +25,13 @@ jobs:
 
       - name: Setup Zig
         if: startsWith(matrix.os, 'ubuntu')
-        uses: goto-bus-stop/setup-zig@v2
+        uses: mlugg/setup-zig@v1
         with:
-          version: latest
+          version: 0.12.0
+
+      - name: Verify Zig
+        if: startsWith(matrix.os, 'ubuntu')
+        run: zig version
 
       - name: Install cargo-zigbuild
         if: startsWith(matrix.os, 'ubuntu')
