@@ -54,9 +54,15 @@ fn is_windows() -> bool {
     cfg!(target_os = "windows")
 }
 
+fn is_macos() -> bool {
+    cfg!(target_os = "macos")
+}
+
 fn check_process() -> CheckResult {
     let cmd = if is_windows() {
         r#"tasklist | findstr /i "openclaw gateway""#.to_string()
+    } else if is_macos() {
+        r#"ps aux | grep -Ei "openclaw|gateway" | grep -v grep"#.to_string()
     } else {
         r#"ps aux | grep -Ei "openclaw|gateway" | grep -v grep"#.to_string()
     };
@@ -81,6 +87,10 @@ fn check_service() -> CheckResult {
         let (a, _) = run_command(r#"schtasks /query /tn "OpenClaw Gateway" 2>NUL"#);
         let (b, _) = run_command(r#"sc query | findstr /i "openclaw" 2>NUL"#);
         (a, b)
+    } else if is_macos() {
+        let (launchd, _) = run_command(r#"launchctl list 2>/dev/null | grep -i openclaw"#);
+        let (cron, _) = run_command(r#"crontab -l 2>/dev/null | grep -i openclaw"#);
+        (format!("{}\n{}", launchd, cron).trim().to_string(), String::new())
     } else {
         // systemd 和 SysV 双路径尝试 + crontab 检查
         let (systemd, _) = run_command(r#"systemctl list-units --type=service --all 2>/dev/null | grep -i openclaw"#);
@@ -111,6 +121,13 @@ fn check_service() -> CheckResult {
 fn check_port() -> CheckResult {
     let (stdout, _) = if is_windows() {
         run_command(r#"netstat -ano | findstr ":18789""#)
+    } else if is_macos() {
+        let (lsof_out, _) = run_command(r#"lsof -nP -iTCP:18789 -sTCP:LISTEN 2>/dev/null"#);
+        if lsof_out.is_empty() {
+            run_command(r#"netstat -anv 2>/dev/null | grep ".18789""#)
+        } else {
+            (lsof_out, String::new())
+        }
     } else {
         // 优先 ss，回退 netstat
         let (ss_out, _) = run_command(r#"ss -ltnp 2>/dev/null | grep ":18789""#);
@@ -141,7 +158,7 @@ fn check_port() -> CheckResult {
                     }
                 }
             } else {
-                // ss/netstat 输出格式多样，这里以是否对外绑定判定风险
+                // 以是否对外绑定判定风险
                 let line_l = line.to_lowercase();
                 let high = line_l.contains("0.0.0.0:18789")
                     || line_l.contains("[::]:18789")
@@ -174,6 +191,13 @@ fn check_files() -> CheckResult {
         if let Ok(pfx86) = env::var("ProgramFiles(x86)") {
             candidates.push(PathBuf::from(pfx86).join("OpenClaw"));
         }
+    } else if is_macos() {
+        let home = env::var("HOME").unwrap_or_default();
+        candidates.push(PathBuf::from(&home).join(".openclaw"));
+        candidates.push(PathBuf::from(&home).join(".clawdbot"));
+        candidates.push(PathBuf::from(&home).join(".moltbot"));
+        candidates.push(PathBuf::from(&home).join(".molthub"));
+        candidates.push(PathBuf::from("/Applications").join("OpenClaw.app"));
     } else {
         let home = env::var("HOME").unwrap_or_default();
         candidates.push(PathBuf::from(&home).join(".openclaw"));

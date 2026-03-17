@@ -1,0 +1,67 @@
+name: build
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Linux toolchain
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Setup Zig
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: latest
+
+      - name: Install cargo-zigbuild
+        if: startsWith(matrix.os, 'ubuntu')
+        run: cargo install cargo-zigbuild
+
+      - name: Build Linux
+        if: startsWith(matrix.os, 'ubuntu')
+        run: cargo zigbuild --release --target x86_64-unknown-linux-musl
+
+      - name: Build macOS
+        if: startsWith(matrix.os, 'macos')
+        run: cargo build --release
+
+      - name: Build Windows
+        if: startsWith(matrix.os, 'windows')
+        run: cargo build --release
+
+      - name: Upload artifact Linux
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawcheck_rs-linux-x86_64-musl
+          path: target/x86_64-unknown-linux-musl/release/clawcheck_rs
+
+      - name: Upload artifact macOS
+        if: startsWith(matrix.os, 'macos')
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawcheck_rs-macos
+          path: target/release/clawcheck_rs
+
+      - name: Upload artifact Windows
+        if: startsWith(matrix.os, 'windows')
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawcheck_rs-windows-x86_64
+          path: target/release/clawcheck_rs.exe
